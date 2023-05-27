@@ -3,12 +3,10 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 import joblib
-import shutil
 import zipfile
 import multiprocessing
-import os
 from concurrent.futures import ThreadPoolExecutor
-
+import logging
 
 df=pd.read_parquet('result_dataset.parquet')
 # Assume `data` is loaded as a Pandas DataFrame
@@ -39,13 +37,13 @@ model.fit(X_train.values, y_train)
 y_pred = model.predict(X_test.values)
 
 result = model.score(X_test.values, y_test)
-print(result)
+
 
 
 # Calculate the Mean Absolute Error and Mean Squared Error
 mae = mean_absolute_error(y_test, y_pred)
 mse = mean_squared_error(y_test, y_pred)
-print(mae, mse)
+
 
 def compress_file(source_file, zip_file):
     joblib.dump(model, source_file)
@@ -64,3 +62,10 @@ executor = ThreadPoolExecutor(max_workers=num_threads)
 
 # Compress the file using multithreading
 executor.submit(compress_file, source_file, zip_file)
+
+logging.basicConfig(filename='model_log.txt', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Log the values
+logging.info('Predictions: {}'.format(result))
+logging.info('MSE: {}'.format(mse))
+logging.info('MAE: {}'.format(mae))
