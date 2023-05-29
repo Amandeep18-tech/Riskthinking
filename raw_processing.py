@@ -3,8 +3,10 @@ import pandas as pd
 from prefect import task, flow
 from prefect_dask.task_runners import DaskTaskRunner
 from math import ceil
+import multiprocessing
+dataset_dir = "stock_market_dataset"
 
-@task
+@task(name='process data')
 def process_data(file_path, symbol, mapping_data, columns):
     # Read the file data
     file_data = pd.read_csv(file_path)
@@ -27,7 +29,7 @@ def process_data(file_path, symbol, mapping_data, columns):
     return file_data[columns]
 
 def file_paths():
-    dataset_dir="./stock_market_dataset"
+    dataset_dir="stock_market_dataset"
     file_paths = []
     etf_dir = os.path.join(dataset_dir, "etfs")
     for filename in os.listdir(etf_dir):
@@ -51,7 +53,7 @@ def chunk_into_n(lst, n):
     list(range(n)))
     )
 
-@task
+@task(name='combine data')
 def combine_data(dataset_dir,file_paths,no_of_files):
     # Define the columns to retain in the final dataset
     columns = ["Symbol", "Security Name", "Date", "Open", "High", "Low", "Close", "Adj Close", "Volume"]
@@ -71,18 +73,16 @@ def combine_data(dataset_dir,file_paths,no_of_files):
     
     combined_data.to_csv(r'combined_data-{}.csv'.format(no_of_files))
     
-def chunks():
+def chunks(partitions):
     files=file_paths()
-    file_chunks=chunk_into_n(files,8)
+    file_chunks=chunk_into_n(files,partitions)
     return file_chunks
 
-dataset_dir = "./stock_market_dataset"
-
-@task
-def combine_csv_task(no_of_files):
+@task(name='combine csv task')
+def combine_csv_task(partitions):
     combined_csv = pd.DataFrame()
     dfs = []
-    for i in range(no_of_files):
+    for i in range(0,partitions):
         filename = f'combined_data-{i}.csv'
         try:
             # Read each CSV file and append its data to the combined DataFrame
@@ -98,9 +98,9 @@ def combine_csv_task(no_of_files):
 def combine_data_flow(no_of_files):
     combine_csv_task(no_of_files)
 
-@flow(task_runner=DaskTaskRunner())
-def make_csv_flow():
-    file_chunks=chunks()
+@flow(task_runner=DaskTaskRunner(cluster_kwargs={"threads_per_worker": 8}))
+def make_csv_flow(num_of_partitions):
+    file_chunks=chunks(num_of_partitions)
     no_of_files=0
     for chunk in file_chunks:
         combine_data.submit(dataset_dir,chunk,no_of_files)
@@ -108,5 +108,6 @@ def make_csv_flow():
     
 
 if __name__ == "__main__":
-    make_csv_flow()
-    combine_data_flow(8)
+    num_of_partitions=40
+    make_csv_flow(num_of_partitions)
+    combine_data_flow(num_of_partitions)
